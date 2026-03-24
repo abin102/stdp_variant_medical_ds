@@ -1,0 +1,98 @@
+experiment:
+  name: "triplet_stdp_mnist"
+  seed: 42
+  device: "cpu"
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"
+
+wandb:
+  enabled: true
+  project: "stdp-spiking"
+  entity: null                # your wandb username/team, or null for default
+  tags: ["triplet", "mnist"]
+  log_interval: 50            # log metrics every N samples
+
+dataset:
+  name: "mnist"
+  train_samples: 60000
+  test_samples: 10000
+
+encoding:
+  method: "poisson"
+  time_window: 350          # ms
+  dt: 1.0                   # ms timestep
+  max_firing_rate: 63.75    # Hz
+  min_firing_rate: 0.0      # Hz
+
+neuron:
+  model: "lif"
+  v_rest: -65.0             # mV
+  v_reset: -65.0            # mV
+  v_thresh: -52.0           # mV
+  tau_membrane: 100.0       # ms
+  refractory_period: 5.0    # ms
+  adaptive_threshold:
+    enabled: true
+    tau_theta: 1.0e7        # ms (very slow decay)
+    theta_increment: 0.05   # mV increase per spike
+
+synapse:
+  model: "conductance"
+  tau_excitatory: 1.0       # ms
+  tau_inhibitory: 2.0       # ms
+  w_min: 0.0
+  w_max: 1.0
+  w_init: "random_uniform"
+
+network:
+  n_input: 784              # 28x28
+  n_excitatory: 400
+  n_inhibitory: 400
+  inhibition_strength: 17.0
+
+learning_rule:
+  type: "triplet_stdp"
+  interaction: "all_to_all"
+
+  # Pair trace parameters
+  tau_plus: 16.8            # ms (pre fast trace)
+  tau_minus: 33.7           # ms (post fast trace)
+  A2_plus: 0.0046
+  A2_minus: 0.003
+
+  # Triplet-specific parameters
+  tau_x: 101.0              # ms (pre slow trace)
+  tau_y: 125.0              # ms (post slow trace)
+  A3_plus: 0.0091
+  A3_minus: 0.0
+
+  # Weight dependence
+  weight_dependence: "exponential"
+  mu_plus: 0.2
+  mu_minus: 0.2
+
+  # Learning rate schedule
+  lr_decay:
+    enabled: false
+    decay_factor: 0.1
+    decay_epochs: [30, 50]
+
+training:
+  n_epochs: 3
+  shuffle: true
+  progress_interval: 100
+  update_interval: 350      # ms (same as time_window)
+
+  silence_handling:
+    enabled: true
+    min_spikes: 5
+    rate_boost: 32.0        # Hz added per retry
+
+evaluation:
+  n_presentations: 10
+  save_confusion_matrix: true
+
+visualization:
+  save_weight_maps: true
+  save_spike_rasters: false
+  weight_map_interval: 5000
