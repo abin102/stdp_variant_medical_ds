@@ -301,6 +301,9 @@ class ConvTrainer:
         min_spikes = silence_cfg.get("min_spikes", 5)
         rate_boost = silence_cfg.get("rate_boost", 32.0)
 
+        # Mid-epoch checkpoint interval (default: every 10000 samples)
+        checkpoint_interval = train_cfg.get("checkpoint_interval", 10000)
+
         # Epochs per layer (can be specified per-layer or globally)
         layers_cfg = self.config.get("layers", [self.config.get("network", {})])
         global_epochs = train_cfg["n_epochs"]
@@ -358,6 +361,16 @@ class ConvTrainer:
                         self.logger.info(
                             f"  Sample {sample_idx + 1}/{len(indices)} | "
                             f"Avg spikes: {avg_spikes:.1f}"
+                        )
+
+                    # Mid-epoch checkpoint
+                    if (sample_idx + 1) % checkpoint_interval == 0:
+                        self.logger.info(
+                            f"  Mid-epoch checkpoint at sample {sample_idx + 1}"
+                        )
+                        self._save_checkpoint(
+                            layer_idx=layer_idx,
+                            tag=f"e{epoch+1}_s{sample_idx+1}",
                         )
 
                     self.global_step += 1
@@ -758,7 +771,7 @@ class ConvTrainer:
     #                         CHECKPOINTING                               #
     # ------------------------------------------------------------------ #
 
-    def _save_checkpoint(self, layer_idx: int = -1):
+    def _save_checkpoint(self, layer_idx: int = -1, tag: str = None):
         ckpt_dir = self.config["experiment"]["checkpoint_dir"]
         os.makedirs(ckpt_dir, exist_ok=True)
 
@@ -775,6 +788,8 @@ class ConvTrainer:
                 state[f"theta_{layer.name}"] = layer.neurons.theta.cpu()
 
         suffix = f"_layer{layer_idx}" if layer_idx >= 0 else ""
+        if tag:
+            suffix += f"_{tag}"
         path = os.path.join(ckpt_dir, f"sdnn_epoch_{self.epoch + 1}{suffix}.pt")
         save_checkpoint(state, path)
         self.logger.info(f"  Checkpoint saved: {path}")

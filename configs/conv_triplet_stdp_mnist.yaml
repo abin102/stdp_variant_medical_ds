@@ -26,7 +26,7 @@ preprocessing:
 
 encoding:
   method: "poisson"          # poisson or latency
-  time_window: 150           # ms (reduced from 350 — sufficient for MNIST)
+  time_window: 50           # ms (reduced from 350 — sufficient for MNIST)
   dt: 1.0
   max_firing_rate: 63.75
   min_firing_rate: 0.0
