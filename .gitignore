@@ -41,4 +41,5 @@ htmlcov/
 logs/
 checkpoints/
 data/
+wandb/
 

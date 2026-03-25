@@ -17,7 +17,7 @@ class LIFNeuron(BaseNeuron):
 
     def __init__(
         self,
-        n_neurons: int,
+        shape,
         v_rest: float = -65.0,
         v_reset: float = -65.0,
         v_thresh: float = -52.0,
@@ -26,16 +26,15 @@ class LIFNeuron(BaseNeuron):
         dt: float = 1.0,
         device: torch.device = None,
     ):
-        super().__init__(n_neurons, dt, device)
+        super().__init__(shape, dt, device)
         self.v_rest = v_rest
         self.v_reset = v_reset
         self.v_thresh = v_thresh
         self.tau_membrane = tau_membrane
         self.refractory_period = refractory_period
 
-        # Pre-allocate scalar tensors to avoid per-step allocation
-        self._v_reset_t = torch.tensor(self.v_reset, dtype=torch.float32, device=self.device)
-        self._refrac_t = torch.tensor(self.refractory_period, dtype=torch.float32, device=self.device)
+        # Pre-compute constant
+        self._dt_over_tau = dt / tau_membrane
 
         # State tensors
         self.v = None
@@ -46,13 +45,13 @@ class LIFNeuron(BaseNeuron):
     def reset(self):
         """Reset all neurons to resting state."""
         self.v = torch.full(
-            (self.n_neurons,), self.v_rest, dtype=torch.float32, device=self.device
+            self.shape, self.v_rest, dtype=torch.float32, device=self.device
         )
         self.refractory_timer = torch.zeros(
-            self.n_neurons, dtype=torch.float32, device=self.device
+            self.shape, dtype=torch.float32, device=self.device
         )
         self.spikes = torch.zeros(
-            self.n_neurons, dtype=torch.float32, device=self.device
+            self.shape, dtype=torch.float32, device=self.device
         )
 
     def step(self, input_current: torch.Tensor) -> torch.Tensor:
@@ -68,23 +67,21 @@ class LIFNeuron(BaseNeuron):
         not_refractory = self.refractory_timer <= 0
 
         # Update membrane potential (only for non-refractory neurons)
-        dv = (self.dt / self.tau_membrane) * (
-            -(self.v - self.v_rest) + input_current
+        dv = (self._dt_over_tau) * (
+            input_current - self.v + self.v_rest
         )
-        self.v = torch.where(not_refractory, self.v + dv, self.v)
+        self.v.add_(dv * not_refractory)
 
         # Check for spikes
-        self.spikes = (self.v >= self.v_thresh).float()
+        spiked = self.v >= self.v_thresh
+        self.spikes = spiked.float()
 
-        # Reset spiking neurons
-        spiked = self.spikes.bool()
-        self.v = torch.where(spiked, self._v_reset_t, self.v)
-
-        # Set refractory timer for spiking neurons
-        self.refractory_timer = torch.where(spiked, self._refrac_t, self.refractory_timer)
+        # Reset spiking neurons and set refractory timer
+        self.v[spiked] = self.v_reset
+        self.refractory_timer[spiked] = self.refractory_period
 
         # Decrement refractory timer
-        self.refractory_timer = (self.refractory_timer - self.dt).clamp(min=0)
+        self.refractory_timer.sub_(self.dt).clamp_(min=0)
 
         return self.spikes
 

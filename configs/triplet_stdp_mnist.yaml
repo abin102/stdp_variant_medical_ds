@@ -1,7 +1,7 @@
 experiment:
   name: "triplet_stdp_mnist"
   seed: 42
-  device: "cpu"
+  device: "cpu"    # cpu, cuda, or mps (Apple Silicon)
   log_dir: "logs/"
   checkpoint_dir: "checkpoints/"
 
@@ -33,7 +33,7 @@ neuron:
   refractory_period: 5.0    # ms
   adaptive_threshold:
     enabled: true
-    tau_theta: 1.0e7        # ms (very slow decay)
+    tau_theta: 10000000.0   # ms (very slow decay)
     theta_increment: 0.05   # mV increase per spike
 
 synapse:

@@ -34,7 +34,6 @@ class PoissonEncoder:
             Spike train [n_timesteps, n_pixels], binary (0/1).
         """
         image = image.to(self.device)
-        n_pixels = image.shape[0]
 
         # Map intensity to firing rate (Hz)
         rates = self.min_firing_rate + image * (
@@ -42,10 +41,10 @@ class PoissonEncoder:
         )
 
         # Probability of spiking in each dt-ms bin
-        spike_prob = rates * self.dt / 1000.0  # [n_pixels]
+        spike_prob = rates * self.dt / 1000.0
 
         # Generate spikes via Bernoulli sampling
-        spike_prob = spike_prob.unsqueeze(0).expand(self.n_timesteps, -1)
+        spike_prob = spike_prob.unsqueeze(0).expand(self.n_timesteps, *spike_prob.shape)
         spikes = torch.bernoulli(spike_prob)
 
         return spikes

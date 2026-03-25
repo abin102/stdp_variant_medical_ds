@@ -1,0 +1,77 @@
+experiment:
+  name: "readout_mc_dropout"
+  seed: 42
+  device: "cpu"
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"
+
+wandb:
+  enabled: true
+  project: "stdp-spiking"
+  entity: null
+  tags: ["readout", "mc_dropout", "uncertainty"]
+  log_interval: 10
+
+dataset:
+  name: "mnist"
+  train_samples: 60000
+  test_samples: 1000
+
+encoding:
+  method: "poisson"
+  time_window: 100
+  dt: 1.0
+  max_firing_rate: 63.75
+  min_firing_rate: 0.0
+
+neuron:
+  model: "lif"
+  v_rest: -65.0
+  v_reset: -65.0
+  v_thresh: -52.0
+  tau_membrane: 100.0
+  refractory_period: 5.0
+  adaptive_threshold:
+    enabled: true
+    tau_theta: 10000000.0
+    theta_increment: 0.05
+
+synapse:
+  model: "conductance"
+  tau_excitatory: 1.0
+  tau_inhibitory: 2.0
+  w_min: 0.0
+  w_max: 1.0
+
+network:
+  in_channels: 1
+  out_channels: 16
+  kernel_size: 5
+  stride: 1
+  padding: 2
+  inhibition_strength: 17.0
+
+learning_rule:
+  type: "conv_triplet_stdp"
+  interaction: "all_to_all"
+  tau_plus: 16.8
+  tau_minus: 33.7
+  A2_plus: 0.0046
+  A2_minus: 0.003
+  tau_x: 101.0
+  tau_y: 125.0
+  A3_plus: 0.0091
+  A3_minus: 0.0
+  weight_dependence: "exponential"
+  mu_plus: 0.2
+  mu_minus: 0.2
+
+readout:
+  lr: 0.001
+  n_epochs: 10
+  batch_size: 32
+  dropout_p: 0.5
+  surrogate_alpha: 2.0
+  tau_m: 10.0
+  v_thresh: 1.0
+  mc_samples: 30

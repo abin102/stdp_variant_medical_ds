@@ -53,6 +53,11 @@ class Trainer:
         self.logger = logger or logging.getLogger(__name__)
         self.device = self._get_device()
 
+        # MPS (Apple Silicon) support
+        if self.device.type == "mps":
+            # MPS doesn't support all ops; fall back gracefully
+            self.logger.info("Using Apple Silicon MPS backend")
+
         # Build components
         self.encoder = self._build_encoder()
         self.topology = NetworkTopology(config, self.device)
@@ -72,6 +77,11 @@ class Trainer:
             dt=config["encoding"]["dt"],
             device=self.device,
         )
+
+        # Cache flags for inner loop (avoid repeated dict/hasattr lookups)
+        self._use_adaptive_threshold = config["neuron"]["adaptive_threshold"].get("enabled", False)
+        self._use_voltage_stdp = hasattr(self.learning_rule, "update_with_voltage")
+        self._has_inh_current = hasattr(self.synapse, "compute_inhibitory_current")
 
         # Training state
         self.epoch = 0
@@ -101,6 +111,9 @@ class Trainer:
         device_str = self.config["experiment"].get("device", "cpu")
         if device_str == "cuda" and not torch.cuda.is_available():
             self.logger.warning("CUDA not available, using CPU")
+            device_str = "cpu"
+        if device_str == "mps" and not torch.backends.mps.is_available():
+            self.logger.warning("MPS not available, using CPU")
             device_str = "cpu"
         return torch.device(device_str)
 
@@ -393,20 +406,28 @@ class Trainer:
         self.synapse.reset()
         self.learning_rule.reset_traces()
 
-        total_post_spikes = 0
+        # Cache config lookups outside the hot loop
+        use_adaptive = self._use_adaptive_threshold
+        use_voltage_stdp = self._use_voltage_stdp
+        has_inh_current = self._has_inh_current
+        weights = self.topology.weights
+        w_min = self.topology.w_min
+        w_max = self.topology.w_max
+
+        # Accumulate spike count on-device (avoid .item() per timestep)
+        spike_accumulator = torch.zeros(1, device=self.device)
+        had_any_spikes = False
 
         for t in range(n_timesteps):
             pre_spikes = spike_train[t]
 
             # Compute excitatory synaptic current
-            exc_current = self.synapse.compute_current(
-                pre_spikes, self.topology.weights
-            )
+            exc_current = self.synapse.compute_current(pre_spikes, weights)
 
-            # Add inhibitory current
-            if total_post_spikes > 0:
+            # Add inhibitory current (skip until first spike)
+            if had_any_spikes:
                 inh_current = self.inhibition.compute_inhibition(self.neurons.spikes)
-                if hasattr(self.synapse, "compute_inhibitory_current"):
+                if has_inh_current:
                     inh_current = self.synapse.compute_inhibitory_current(inh_current)
                     exc_current = exc_current + inh_current
                 else:
@@ -416,27 +437,31 @@ class Trainer:
             post_spikes = self.neurons.step(exc_current)
 
             # Homeostatic threshold adaptation
-            if self.config["neuron"]["adaptive_threshold"].get("enabled", False):
+            if use_adaptive:
                 self.homeostasis.update_threshold(post_spikes)
 
             # STDP weight update
             if learn:
-                if hasattr(self.learning_rule, "update_with_voltage"):
+                if use_voltage_stdp:
                     dw = self.learning_rule.update_with_voltage(
-                        pre_spikes, post_spikes, self.topology.weights, self.neurons.v
+                        pre_spikes, post_spikes, weights, self.neurons.v
                     )
                 else:
                     dw = self.learning_rule.update(
-                        pre_spikes, post_spikes, self.topology.weights
+                        pre_spikes, post_spikes, weights
                     )
-                self.topology.weights = self.topology.weights + dw
-                self.topology.weights = self.topology.weights.clamp(
-                    self.topology.w_min, self.topology.w_max
-                )
+                weights = (weights + dw).clamp(w_min, w_max)
 
-            total_post_spikes += post_spikes.sum().item()
+            # Accumulate on-device
+            spike_sum = post_spikes.sum()
+            spike_accumulator += spike_sum
+            if not had_any_spikes and spike_sum > 0:
+                had_any_spikes = True
 
-        return int(total_post_spikes)
+        # Write back weights
+        self.topology.weights = weights
+
+        return int(spike_accumulator.item())
 
     def _handle_silence(self, image: torch.Tensor, rate_boost: float, min_spikes: int) -> int:
         """Re-encode and simulate with boosted firing rate when network is silent."""

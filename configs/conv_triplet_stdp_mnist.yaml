@@ -1,0 +1,135 @@
+experiment:
+  name: "sdnn_triplet_stdp_mnist"
+  seed: 42
+  device: "cpu"    # cpu, cuda, or mps
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"
+
+wandb:
+  enabled: true
+  project: "stdp-spiking"
+  entity: null
+  tags: ["sdnn", "triplet", "mnist", "2layer", "dog"]
+  log_interval: 50
+
+dataset:
+  name: "mnist"
+  train_samples: 60000
+  test_samples: 10000
+
+preprocessing:
+  dog:
+    enabled: true
+    sigma1: 1.0
+    sigma2: 2.0
+    kernel_size: 7
+
+encoding:
+  method: "poisson"          # poisson or latency
+  time_window: 150           # ms (reduced from 350 — sufficient for MNIST)
+  dt: 1.0
+  max_firing_rate: 63.75
+  min_firing_rate: 0.0
+
+neuron:
+  model: "adaptive_lif"      # adaptive_lif handles threshold internally
+  v_rest: -65.0
+  v_reset: -65.0
+  v_thresh: -63.5            # lowered (no more 31x current scaling)
+  tau_membrane: 100.0
+  refractory_period: 5.0
+  adaptive_threshold:
+    enabled: true
+    tau_theta: 10000000.0     # 1e7 ms — very slow adaptation
+    theta_increment: 0.05
+
+synapse:
+  model: "conductance"
+  tau_excitatory: 1.0
+  tau_inhibitory: 2.0
+  w_min: 0.0
+  w_max: 1.0
+  w_init: "random_uniform"
+
+# ---- 2-Layer SDNN Architecture ----
+# Input(2,28,28) → Conv1 → Pool → Conv2 → Pool
+layers:
+  - name: "conv1"
+    in_channels: 2            # DoG ON/OFF channels
+    out_channels: 30
+    kernel_size: 5
+    stride: 1
+    padding: 2
+    pool_size: 2
+    inhibition_strength: 8.0
+    n_epochs: 3               # train Conv1 for 3 epochs
+
+  - name: "conv2"
+    in_channels: 30
+    out_channels: 100
+    kernel_size: 3
+    stride: 1
+    padding: 1
+    pool_size: 2
+    inhibition_strength: 5.0
+    n_epochs: 3               # then train Conv2 for 3 epochs
+
+learning_rule:
+  type: "conv_triplet_stdp"
+  interaction: "all_to_all"
+
+  # Pair-based STDP parameters
+  tau_plus: 16.8
+  tau_minus: 33.7
+  A2_plus: 0.003             # reduced from 0.0046 — less LTP pressure
+  A2_minus: 0.003
+
+  # Triplet-specific parameters
+  tau_x: 101.0
+  tau_y: 125.0
+  A3_plus: 0.006             # reduced from 0.0091
+  A3_minus: 0.001            # was 0.0 — now has slow depression
+
+  # Weight dependence
+  weight_dependence: "linear" # more stable than exponential
+  mu_plus: 0.2
+  mu_minus: 0.2
+
+  lr_decay:
+    enabled: true
+    decay_factor: 0.5
+    decay_epochs: [2, 3]
+
+training:
+  n_epochs: 3                # default per-layer (overridden by layers[].n_epochs)
+  shuffle: true
+  progress_interval: 100
+  update_interval: 150
+
+  silence_handling:
+    enabled: true
+    min_spikes: 5
+    rate_boost: 32.0
+
+# ---- Supervised Readout (trained after STDP) ----
+readout:
+  enabled: true
+  hidden_size: 256
+  dropout_p: 0.3
+  mc_samples: 20
+  n_epochs: 100
+  batch_size: 32
+  lr: 0.001
+  weight_decay: 0.0001
+  surrogate_alpha: 2.0
+  tau_m: 10.0
+  v_thresh: 1.0
+
+evaluation:
+  n_presentations: 10
+  save_confusion_matrix: true
+
+visualization:
+  save_weight_maps: true
+  save_spike_rasters: false
+  weight_map_interval: 5000

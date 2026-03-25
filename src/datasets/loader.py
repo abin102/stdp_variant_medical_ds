@@ -17,11 +17,12 @@ class DatasetLoader:
         "cifar10": datasets.CIFAR10,
     }
 
-    def __init__(self, config: dict, data_root: str = "./data"):
+    def __init__(self, config: dict, data_root: str = "./data", flatten: bool = True):
         self.name = config["dataset"]["name"].lower()
         self.train_samples = config["dataset"].get("train_samples", -1)
         self.test_samples = config["dataset"].get("test_samples", -1)
         self.data_root = data_root
+        self.flatten = flatten
 
         if self.name not in self.DATASETS:
             raise ValueError(
@@ -56,14 +57,17 @@ class DatasetLoader:
         return train_data, test_data
 
     def _extract(self, dataset, max_samples: int):
-        """Extract and flatten images from dataset."""
+        """Extract and optionally flatten images from dataset."""
         n = len(dataset) if max_samples == -1 else min(max_samples, len(dataset))
         data = []
         for i in range(n):
             img, label = dataset[i]
             # img is [C, H, W] tensor with values in [0, 1]
-            flat = img.view(-1)  # flatten to [n_pixels]
-            data.append((flat, label))
+            if self.flatten:
+                flat = img.view(-1)  # flatten to [n_pixels]
+                data.append((flat, label))
+            else:
+                data.append((img, label))
         return data
 
     def get_input_size(self) -> int:
@@ -71,3 +75,9 @@ class DatasetLoader:
         if self.name == "cifar10":
             return 32 * 32  # grayscale
         return 28 * 28
+
+    def get_input_shape(self) -> tuple:
+        """Return the spatial input shape [C, H, W]."""
+        if self.name == "cifar10":
+            return (1, 32, 32)
+        return (1, 28, 28)

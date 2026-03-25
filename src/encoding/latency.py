@@ -6,6 +6,8 @@ class LatencyEncoder:
 
     Each pixel fires exactly once. The spike time is inversely proportional
     to the pixel intensity. Pixels with intensity 0 do not fire.
+
+    Supports both 1D (flattened) and spatial (C, H, W) inputs.
     """
 
     def __init__(
@@ -20,29 +22,37 @@ class LatencyEncoder:
         self.device = device or torch.device("cpu")
 
     def encode(self, image: torch.Tensor) -> torch.Tensor:
-        """Convert flattened image to latency-coded spike train.
+        """Convert image to latency-coded spike train.
 
         Args:
-            image: Pixel intensities [n_pixels], values in [0, 1].
+            image: Pixel intensities with values in [0, 1].
+                   Shape can be [n_pixels], [C, H, W], or [H, W].
 
         Returns:
-            Spike train [n_timesteps, n_pixels], binary.
+            Spike train, binary.
+                If input is [n_pixels]: returns [n_timesteps, n_pixels].
+                If input is [C, H, W]: returns [n_timesteps, C, H, W].
+                If input is [H, W]: returns [n_timesteps, H, W].
         """
         image = image.to(self.device)
-        n_pixels = image.shape[0]
+        original_shape = image.shape
 
-        spikes = torch.zeros(self.n_timesteps, n_pixels, device=self.device)
+        # Flatten for vectorized processing
+        flat = image.reshape(-1)
+        n_pixels = flat.shape[0]
 
         # Only encode pixels with nonzero intensity
-        active = image > 0
+        active = flat > 0
+
         # Spike time: high intensity -> early spike
-        # t_spike = (1 - intensity) * (n_timesteps - 1)
-        spike_times = ((1.0 - image) * (self.n_timesteps - 1)).long()
+        spike_times = ((1.0 - flat) * (self.n_timesteps - 1)).long()
         spike_times = spike_times.clamp(0, self.n_timesteps - 1)
 
-        # Place spikes
-        for i in range(n_pixels):
-            if active[i]:
-                spikes[spike_times[i], i] = 1.0
+        # Vectorized spike placement (no for-loop)
+        spikes = torch.zeros(self.n_timesteps, n_pixels, device=self.device)
+        active_indices = torch.where(active)[0]
+        if active_indices.numel() > 0:
+            spikes[spike_times[active_indices], active_indices] = 1.0
 
-        return spikes
+        # Reshape back to original spatial dimensions
+        return spikes.reshape(self.n_timesteps, *original_shape)

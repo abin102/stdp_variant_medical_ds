@@ -11,22 +11,23 @@ class Homeostasis:
 
     def __init__(
         self,
-        n_neurons: int,
+        shape,
         tau_theta: float = 1e7,
         theta_increment: float = 0.05,
         target_rate: float = None,
         dt: float = 1.0,
         device: torch.device = None,
     ):
-        self.n_neurons = n_neurons
-        self.tau_theta = tau_theta
-        self.theta_increment = theta_increment
+        self.shape = (shape,) if isinstance(shape, int) else tuple(shape)
+        self.n_neurons = shape if isinstance(shape, int) else torch.prod(torch.tensor(shape)).item()
+        self.tau_theta = float(tau_theta)
+        self.theta_increment = float(theta_increment)
         self.target_rate = target_rate
         self.dt = dt
         self.device = device or torch.device("cpu")
 
-        self.theta = torch.zeros(n_neurons, device=self.device)
-        self.spike_counts = torch.zeros(n_neurons, device=self.device)
+        self.theta = torch.zeros(self.shape, device=self.device)
+        self.spike_counts = torch.zeros(self.shape, device=self.device)
         self.total_steps = 0
 
     def update_threshold(self, spikes: torch.Tensor):

@@ -65,6 +65,12 @@ class TripletSTDP(BaseSTDP):
         self.trace_pre_slow = None   # x2 [n_pre]
         self.trace_post_fast = None  # y1 [n_post]
         self.trace_post_slow = None  # y2 [n_post]
+
+        # Pre-allocate buffers to avoid per-timestep allocation
+        self._x2_before = torch.zeros(n_pre, device=self.device)
+        self._y2_before = torch.zeros(n_post, device=self.device)
+        self._dw = torch.zeros(n_pre, n_post, device=self.device)
+
         self.reset_traces()
 
     def reset_traces(self):
@@ -85,14 +91,14 @@ class TripletSTDP(BaseSTDP):
             dW [n_pre, n_post].
         """
         # Decay all traces
-        self.trace_pre_fast = self.trace_pre_fast * self.decay_pre_fast
-        self.trace_post_fast = self.trace_post_fast * self.decay_post_fast
-        self.trace_pre_slow = self.trace_pre_slow * self.decay_pre_slow
-        self.trace_post_slow = self.trace_post_slow * self.decay_post_slow
+        self.trace_pre_fast.mul_(self.decay_pre_fast)
+        self.trace_post_fast.mul_(self.decay_post_fast)
+        self.trace_pre_slow.mul_(self.decay_pre_slow)
+        self.trace_post_slow.mul_(self.decay_post_slow)
 
-        # Save slow traces before spike update (t-epsilon)
-        x2_before = self.trace_pre_slow.clone()
-        y2_before = self.trace_post_slow.clone()
+        # Save slow traces before spike update (t-epsilon) — copy into pre-allocated buffer
+        self._x2_before.copy_(self.trace_pre_slow)
+        self._y2_before.copy_(self.trace_post_slow)
 
         # Update traces with current spikes
         if self.interaction == "nearest_spike":
@@ -116,17 +122,18 @@ class TripletSTDP(BaseSTDP):
 
         # LTP: on post spike
         # dW += (A2_plus + A3_plus * x2_before[i]) * x1[i] * post_spike[j]
-        ltp_amplitude = self.A2_plus + self.A3_plus * x2_before  # [n_pre]
+        ltp_amplitude = self.A2_plus + self.A3_plus * self._x2_before  # [n_pre]
         dw_plus = torch.outer(ltp_amplitude * self.trace_pre_fast, post_spikes)
 
         # LTD: on pre spike
         # dW -= (A2_minus + A3_minus * y2_before[j]) * y1[j] * pre_spike[i]
-        ltd_amplitude = self.A2_minus + self.A3_minus * y2_before  # [n_post]
+        ltd_amplitude = self.A2_minus + self.A3_minus * self._y2_before  # [n_post]
         dw_minus = torch.outer(pre_spikes, ltd_amplitude * self.trace_post_fast)
 
         # Apply weight dependence
         dw_plus = self.apply_weight_dependence(dw_plus, weights, is_ltp=True)
         dw_minus = self.apply_weight_dependence(dw_minus, weights, is_ltp=False)
 
-        dw = dw_plus - dw_minus
-        return dw
+        # Reuse pre-allocated buffer
+        torch.sub(dw_plus, dw_minus, out=self._dw)
+        return self._dw

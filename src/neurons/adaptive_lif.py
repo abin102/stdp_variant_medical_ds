@@ -16,7 +16,7 @@ class AdaptiveLIFNeuron(BaseNeuron):
 
     def __init__(
         self,
-        n_neurons: int,
+        shape,
         v_rest: float = -65.0,
         v_reset: float = -65.0,
         v_thresh: float = -52.0,
@@ -27,7 +27,7 @@ class AdaptiveLIFNeuron(BaseNeuron):
         dt: float = 1.0,
         device: torch.device = None,
     ):
-        super().__init__(n_neurons, dt, device)
+        super().__init__(shape, dt, device)
         self.v_rest = v_rest
         self.v_reset = v_reset
         self.v_thresh = v_thresh
@@ -48,16 +48,16 @@ class AdaptiveLIFNeuron(BaseNeuron):
 
     def reset(self):
         self.v = torch.full(
-            (self.n_neurons,), self.v_rest, dtype=torch.float32, device=self.device
+            self.shape, self.v_rest, dtype=torch.float32, device=self.device
         )
         self.theta = torch.zeros(
-            self.n_neurons, dtype=torch.float32, device=self.device
+            self.shape, dtype=torch.float32, device=self.device
         )
         self.refractory_timer = torch.zeros(
-            self.n_neurons, dtype=torch.float32, device=self.device
+            self.shape, dtype=torch.float32, device=self.device
         )
         self.spikes = torch.zeros(
-            self.n_neurons, dtype=torch.float32, device=self.device
+            self.shape, dtype=torch.float32, device=self.device
         )
 
     def step(self, input_current: torch.Tensor) -> torch.Tensor:

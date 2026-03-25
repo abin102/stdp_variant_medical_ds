@@ -10,8 +10,9 @@ class BaseNeuron(ABC):
     The state is maintained as tensors for vectorized simulation.
     """
 
-    def __init__(self, n_neurons: int, dt: float = 1.0, device: torch.device = None):
-        self.n_neurons = n_neurons
+    def __init__(self, shape, dt: float = 1.0, device: torch.device = None):
+        self.shape = (shape,) if isinstance(shape, int) else tuple(shape)
+        self.n_neurons = shape if isinstance(shape, int) else torch.prod(torch.tensor(shape)).item()
         self.dt = dt
         self.device = device or torch.device("cpu")
 
@@ -25,10 +26,10 @@ class BaseNeuron(ABC):
         """Advance one timestep given input current.
 
         Args:
-            input_current: Input current to each neuron [n_neurons].
+            input_current: Input current to each neuron.
 
         Returns:
-            Binary spike tensor [n_neurons] (1.0 where neuron fired).
+            Binary spike tensor (1.0 where neuron fired).
         """
         pass
 

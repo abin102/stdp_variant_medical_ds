@@ -65,6 +65,9 @@ def get_device(config: dict) -> torch.device:
     if device_str == "cuda" and not torch.cuda.is_available():
         logging.warning("CUDA requested but not available, falling back to CPU")
         device_str = "cpu"
+    if device_str == "mps" and not torch.backends.mps.is_available():
+        logging.warning("MPS requested but not available, falling back to CPU")
+        device_str = "cpu"
     return torch.device(device_str)
 
 
