@@ -308,13 +308,29 @@ class ConvTrainer:
         layers_cfg = self.config.get("layers", [self.config.get("network", {})])
         global_epochs = train_cfg["n_epochs"]
 
+        resume_layer = getattr(self, "resume_layer_idx", 0)
+        resume_epoch = getattr(self, "resume_epoch", 0)
+
         for layer_idx, layer in enumerate(self.layers):
             n_epochs = layers_cfg[layer_idx].get("n_epochs", global_epochs)
+
+            # Skip fully completed layers
+            if layer_idx < resume_layer:
+                self.logger.info(f"Skipping layer {layer.name} (already trained)")
+                continue
+
             self.logger.info(f"\n{'='*60}")
             self.logger.info(f"Training layer: {layer.name} for {n_epochs} epochs")
             self.logger.info(f"{'='*60}")
 
             for epoch in range(n_epochs):
+                # Skip completed epochs for the resumed layer
+                if layer_idx == resume_layer and epoch <= resume_epoch:
+                    self.logger.info(
+                        f"Skipping {layer.name} epoch {epoch + 1} (already done)"
+                    )
+                    continue
+
                 self.epoch = epoch
                 self.logger.info(f"Layer {layer.name} — Epoch {epoch + 1}/{n_epochs}")
 
@@ -778,6 +794,7 @@ class ConvTrainer:
         state = {
             "epoch": self.epoch,
             "global_step": self.global_step,
+            "layer_idx": layer_idx,
             "config": self.config,
         }
 
@@ -793,6 +810,35 @@ class ConvTrainer:
         path = os.path.join(ckpt_dir, f"sdnn_epoch_{self.epoch + 1}{suffix}.pt")
         save_checkpoint(state, path)
         self.logger.info(f"  Checkpoint saved: {path}")
+
+    def load_checkpoint(self, path: str):
+        """Load weights and training state from a checkpoint for resuming.
+
+        Args:
+            path: Path to an sdnn_*.pt checkpoint file.
+        """
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
+
+        # Restore layer weights and adaptive thresholds
+        for layer in self.layers:
+            key = f"weights_{layer.name}"
+            if key in ckpt:
+                layer.topology.weights = ckpt[key].to(self.device)
+                self.logger.info(f"  Loaded weights for {layer.name}")
+            theta_key = f"theta_{layer.name}"
+            if theta_key in ckpt and hasattr(layer.neurons, "theta"):
+                layer.neurons.theta = ckpt[theta_key].to(self.device)
+                self.logger.info(f"  Loaded theta for {layer.name}")
+
+        # Restore training state
+        self.resume_epoch = ckpt.get("epoch", 0)
+        self.global_step = ckpt.get("global_step", 0)
+        self.resume_layer_idx = ckpt.get("layer_idx", 0)
+
+        self.logger.info(
+            f"  Resumed from epoch {self.resume_epoch + 1}, "
+            f"layer idx {self.resume_layer_idx}, step {self.global_step}"
+        )
 
     def finish(self):
         """Clean up wandb."""

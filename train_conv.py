@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--readout", action="store_true", help="Also train supervised readout after STDP")
     parser.add_argument("--readout-only", action="store_true", help="Skip STDP, train readout from checkpoint")
     parser.add_argument("--stdp-checkpoint", type=str, default=None, help="STDP checkpoint for readout-only mode")
+    parser.add_argument("--resume", type=str, default=None, help="Resume STDP training from checkpoint")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -42,6 +43,9 @@ def main():
     if not args.readout_only:
         # Phase 1: Train STDP layers
         trainer = ConvTrainer(config, logger, in_shape=loader.get_input_shape())
+        if args.resume:
+            logger.info(f"Resuming STDP training from: {args.resume}")
+            trainer.load_checkpoint(args.resume)
         trainer.train(train_data)
 
         # Baseline evaluation (channel voting)

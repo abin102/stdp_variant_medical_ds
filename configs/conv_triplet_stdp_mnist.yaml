@@ -28,15 +28,15 @@ encoding:
   method: "poisson"          # poisson or latency
   time_window: 50           # ms (reduced from 350 — sufficient for MNIST)
   dt: 1.0
-  max_firing_rate: 63.75
+  max_firing_rate: 200.0       # higher rate for shorter window (50ms × 200Hz/1000 = 10 spikes/bright pixel)
   min_firing_rate: 0.0
 
 neuron:
   model: "adaptive_lif"      # adaptive_lif handles threshold internally
   v_rest: -65.0
   v_reset: -65.0
-  v_thresh: -63.5            # lowered (no more 31x current scaling)
-  tau_membrane: 100.0
+  v_thresh: -64.8            # very close to v_rest=-65 to allow spiking without artificial scaling
+  tau_membrane: 20.0          # faster integration (was 100 — too slow for 50ms window)
   refractory_period: 5.0
   adaptive_threshold:
     enabled: true
@@ -45,8 +45,8 @@ neuron:
 
 synapse:
   model: "conductance"
-  tau_excitatory: 1.0
-  tau_inhibitory: 2.0
+  tau_excitatory: 5.0          # longer trace allows current to accumulate (was 1.0 — instant decay)
+  tau_inhibitory: 10.0
   w_min: 0.0
   w_max: 1.0
   w_init: "random_uniform"
